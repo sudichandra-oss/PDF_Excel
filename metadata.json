@@ -1,0 +1,6 @@
+{
+  "name": "Bank Statement PDF to Excel Converter",
+  "description": "Convert bank statement PDFs into clean, structured Excel (.xlsx) and CSV files with instant preview, column mapping, smart analysis, and download.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
