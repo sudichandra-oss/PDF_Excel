@@ -597,6 +597,8 @@ export function parsePositionedBankStatementLines(
       const b = sorted[sorted.length - 1].v;
       debit = d > 0 ? d : null;
       credit = c > 0 ? c : null;
+      // Preserve zero balances so the next row can still be classified by
+      // comparing running-balance changes.
       balance = b;
     } else if (nums.length === 2) {
       const sorted = [...nums].sort((a, b) => a.x - b.x);
@@ -628,6 +630,27 @@ export function parsePositionedBankStatementLines(
       balance,
     };
   });
+
+  // Some bank PDFs omit the empty debit/credit column, leaving only
+  // [transaction amount, running balance]. Narration is not enough to tell
+  // whether a UPI entry is incoming or outgoing, so use the balance delta.
+  let previousBalance: number | null = null;
+  for (const row of rawRows) {
+    const amount = row.debit ?? row.credit ?? null;
+    if (amount !== null && row.balance !== null && previousBalance !== null) {
+      const delta = row.balance - previousBalance;
+      if (delta > 0) {
+        row.credit = amount;
+        row.debit = null;
+      } else if (delta < 0) {
+        row.debit = amount;
+        row.credit = null;
+      }
+    }
+    if (row.balance !== null && row.balance !== undefined) {
+      previousBalance = row.balance;
+    }
+  }
 
   const result = validateAndMapBankStatement(rawRows, accountInfo, fileName);
   if (!result.success || !result.data) {
