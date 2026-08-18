@@ -46,6 +46,25 @@ export interface BankStatementData {
   account: AccountMetadata;
   transactions: TransactionRow[];
   detectedColumns: string[];
+  rawRows?: Array<Record<string, any>>;
+  rawHeaders?: string[];
+  rawCaretText?: string;
+}
+
+export interface ColumnMappingConfig {
+  postDateCol: string;
+  valueDateCol?: string;
+  descriptionCol: string;
+  chequeNoCol?: string;
+  branchCodeCol?: string;
+  debitCol?: string;
+  creditCol?: string;
+  amountCol?: string; // If single amount column
+  drCrCol?: string;   // If separate DR/CR column
+  balanceCol?: string;
+  categoryCol?: string;
+  modeCol?: string;
+  dateFormat?: 'DD/MM/YYYY' | 'YYYY-MM-DD' | 'MM/DD/YYYY' | 'AUTO';
 }
 
 export type ViewTab = 'spreadsheet' | 'summary' | 'insights' | 'raw';
@@ -66,41 +85,4 @@ export interface ExportSettings {
   includeModeColumn: boolean;
   dateFormat: 'DD/MM/YYYY' | 'YYYY-MM-DD' | 'MM/DD/YYYY';
   amountFormat: 'split' | 'single'; // split = Debit + Credit columns, single = Amount (+/-)
-}
-
-/**
- * A single OCR'd / text-layer word with its pixel/PDF-space position,
- * used for position-aware column detection (e.g. distinguishing
- * Withdrawal vs Deposit columns when a row only has one ambiguous amount).
- */
-export interface PositionedWord {
-  text: string;
-  x: number;
-  y: number;
-}
-
-/** A single line of a statement page, made up of positioned words, in reading order. */
-export interface PositionedLine {
-  page: number;
-  y: number;
-  words: PositionedWord[];
-}
-
-/** Progress info reported while extracting/OCR-ing a PDF, for progress-bar UI. */
-export interface ExtractProgress {
-  fileName?: string;
-  stage: 'loading' | 'text-layer' | 'ocr';
-  page: number;
-  totalPages: number;
-  percent: number; // 0-100 for this file
-}
-
-export type ExtractProgressCallback = (progress: ExtractProgress) => void;
-
-/** Result of extracting a PDF: both a flat text view and a positioned-word view. */
-export interface ExtractedPdfResult {
-  text: string;
-  positionedLines: PositionedLine[];
-  pageCount: number;
-  usedOcr: boolean;
 }

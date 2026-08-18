@@ -60,26 +60,37 @@ app.post("/api/parse-statement", async (req, res) => {
 Your task is to parse any Bank Statement (PDF, image, or raw text) into cleanly structured tabular records and account metadata.
 Extract every single transaction with 100% numerical fidelity.
 
-Understand that PDF bank statement column headers vary across banks. You must automatically recognize and map these header variations:
-- Date Column variations: "Date", "Txn Date", "Tran Date", "Posting Date", "Value Dt", "Value Date" -> map to postDate and valueDate
-- Narration / Description variations: "Narration", "Particulars", "Transaction Details", "Description", "Transaction Remarks", "Details", "Remarks" -> map to description
-- Cheque / Ref Number variations: "Chq./Ref.No.", "Chq No", "Cheque No", "Ref No", "Ref.No.", "UTR / RRN", "Instrument ID" -> map to chequeNo and referenceNo
-- Debit / Withdrawal variations: "Withdrawal Amt.", "Withdrawal Amount", "Withdrawal (Dr)", "Withdrawal", "Debit", "Debit Amount", "Debit Amt.", "Dr Amt", "Dr." -> map to debit (Number or null)
-- Credit / Deposit variations: "Deposit Amt.", "Deposit Amount", "Deposit (Cr)", "Deposit", "Credit", "Credit Amount", "Credit Amt.", "Cr Amt", "Cr." -> map to credit (Number or null)
-- Balance variations: "Closing Balance", "Balance", "Running Balance", "Available Balance", "Book Balance" -> map to balance (Number or null)
+CRITICAL NUMERICAL ACCURACY RULES (AVOIDING COMMA SEPARATION & FIELD MERGING DEFECTS):
+- Numbers in statements often have thousands separators (e.g., Indian format "1,25,000.00" or standard "1,500.00"). You MUST parse them as clean numbers (e.g. 125000.00 and 1500.00).
+- Narrations often contain commas (e.g. "SALARY, MARCH 2024, BANGALORE"). NEVER allow commas in narrations or amounts to shift columns or corrupt amounts.
+- NEVER concatenate account numbers, UTRs, cheque numbers, phone numbers, or dates into the Debit or Credit columns.
+- Debit (Withdrawals / Outflows): MUST be positive number or null. If empty/not a withdrawal, output null (never -1, never concatenate adjacent fields).
+- Credit (Deposits / Inflows): MUST be positive number or null. If empty/not a deposit, output null (never -1).
+- Balance (Running / Closing balance): MUST be positive number or null.
 - Category: Automatically classify each transaction into a smart category (e.g. "Tuition Fees", "UPI / Digital Payment", "Cash Deposit", "Cash Withdrawal", "Bank Charges / GST", "Salary", "Investment / Mutual Fund", "Loan / EMI", "Utilities / Bills", "Dining / Food", "Shopping", "Travel", "Interest Inflow", "General Transfer") based on the narration.
+- Whenever a value is null, missing, empty, or not applicable, output null. NEVER replace null or empty values with -1 or dummy placeholder numbers.
+
+Understand that PDF bank statement column headers vary across banks:
+- Date Column variations: "Post Date", "Posting Date", "Date", "Txn Date", "Tran Date", "Value Date", "Value Dt" -> map to postDate and valueDate
+- Value Date variations: "Value Date", "Value Dt", "Val Date" -> map to valueDate
+- Branch Code variations: "Branch Code", "Branch", "Br Code", "Sol ID" -> map to branchCode
+- Narration / Description variations: "Transaction Description", "Narration", "Particulars", "Transaction Details", "Description", "Transaction Remarks", "Details", "Remarks" -> map to description
+- Cheque / Ref Number variations: "Cheque Number", "Cheque No", "Chq./Ref.No.", "Chq No", "Ref No", "Ref.No.", "UTR / RRN", "Instrument ID", "Instrument No" -> map to chequeNo and referenceNo
+- Debit / Withdrawal variations: "Debit", "Debit Amount", "Debit Amt.", "Withdrawal Amt.", "Withdrawal Amount", "Withdrawal (Dr)", "Withdrawal", "Dr Amt", "Dr.", "Outflow" -> map to debit (Number or null)
+- Credit / Deposit variations: "Credit", "Credit Amount", "Credit Amt.", "Deposit Amt.", "Deposit Amount", "Deposit (Cr)", "Deposit", "Cr Amt", "Cr.", "Inflow" -> map to credit (Number or null)
+- Balance variations: "Balance", "Closing Balance", "Running Balance", "Available Balance", "Book Balance" -> map to balance (Number or null), extract trailing CR/DR to balanceType (e.g., "29,866.60 CR" -> balance: 29866.60, balanceType: "CR")
 
 Guidelines:
-1. Account Information: Extract Bank Name, Account Holder Name, Account Number, IFSC/Routing code, Branch Name, Branch Code, Statement Period, Opening Balance, Closing Balance, Total Credits, Total Debits, Currency.
+1. Account Information: Extract Bank Name, Account Holder Name, Account Number, IFSC/Routing code, Branch Name, Branch Code, Statement Period, Opening Balance, Closing Balance, Total Credits, Total Debits, Currency. (If unknown, leave as null).
 2. Transactions Table: Extract EVERY single row in chronological order.
    - postDate: String (DD/MM/YYYY or YYYY-MM-DD or DD-MMM-YYYY)
    - valueDate: String (DD/MM/YYYY or YYYY-MM-DD or DD-MMM-YYYY)
    - branchCode: String or empty
    - chequeNo: String or empty (e.g., from Chq./Ref.No.)
    - description: String (Full clean narration / particulars / transaction details)
-   - debit: Number or null (Withdrawal / Debit amount)
-   - credit: Number or null (Deposit / Credit amount)
-   - balance: Number or null (Closing / running balance)
+   - debit: Number or null (Withdrawal / Debit amount). If not a withdrawal row or empty, MUST be null (DO NOT use -1).
+   - credit: Number or null (Deposit / Credit amount). If not a deposit row or empty, MUST be null (DO NOT use -1).
+   - balance: Number or null (Closing / running balance). If not present, MUST be null (DO NOT use -1).
    - balanceType: 'CR' or 'DR' or ''
    - mode: 'UPI' | 'NEFT' | 'IMPS' | 'CASH' | 'TRANSFER' | 'CHARGES' | 'INTEREST' | 'OTHER'
    - category: Intelligent category string derived from the narration
@@ -192,33 +203,66 @@ ${rawText}` : `Parse this bank statement file (${fileName || "document"}) and ex
     }
     const parsedJson = JSON.parse(response.text || "{}");
     const transactions = Array.isArray(parsedJson.transactions) ? parsedJson.transactions : [];
-    const validRows = transactions.filter((tx) => {
+    let validRows = transactions.filter((tx) => {
       const hasDate = Boolean(tx.postDate || tx.valueDate);
       const hasDesc = Boolean(tx.description && String(tx.description).trim().length > 0);
       const hasAmt = tx.debit !== null && tx.debit !== void 0 || tx.credit !== null && tx.credit !== void 0 || tx.balance !== null && tx.balance !== void 0;
-      return hasDate && hasDesc || hasDate && hasAmt || hasDesc && hasAmt;
+      return hasDate || hasDesc || hasAmt;
     });
+    if (validRows.length === 0 && transactions.length > 0) {
+      validRows = transactions;
+    }
     if (validRows.length === 0) {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
-        error: `File format mismatch: Could not find required columns (Date, Description, Category, Amount) in '${fileName || "uploaded file"}'. Please ensure your statement contains these columns or upload a valid bank statement.`
+        fallback: true,
+        warning: "AI did not find structured transaction rows, attempting local parser."
       });
     }
-    const processedTransactions = validRows.map((tx, i) => ({
-      id: `ai-tx-${i + 1}-${Date.now()}`,
-      postDate: tx.postDate || tx.valueDate || "01/04/2025",
-      valueDate: tx.valueDate || tx.postDate || "01/04/2025",
-      branchCode: tx.branchCode || "",
-      chequeNo: tx.chequeNo || "",
-      description: tx.description || "Bank Transaction",
-      debit: tx.debit ?? null,
-      credit: tx.credit ?? null,
-      balance: tx.balance ?? null,
-      balanceType: tx.balanceType || (tx.balance !== null ? "CR" : ""),
-      mode: tx.mode || "OTHER",
-      category: tx.category || "General",
-      referenceNo: tx.referenceNo || ""
-    }));
+    const processedTransactions = validRows.map((tx, i) => {
+      let rawDeb = tx.debit !== null && tx.debit !== void 0 && tx.debit !== -1 && !isNaN(Number(tx.debit)) ? Math.abs(Number(tx.debit)) : null;
+      let rawCred = tx.credit !== null && tx.credit !== void 0 && tx.credit !== -1 && !isNaN(Number(tx.credit)) ? Math.abs(Number(tx.credit)) : null;
+      let rawBal = tx.balance !== null && tx.balance !== void 0 && tx.balance !== -1 && !isNaN(Number(tx.balance)) ? Number(tx.balance) : null;
+      if (rawDeb && rawDeb > 1e10 && Number.isInteger(rawDeb)) {
+        rawDeb = null;
+      }
+      if (rawCred && rawCred > 1e10 && Number.isInteger(rawCred)) {
+        rawCred = null;
+      }
+      return {
+        id: `ai-tx-${i + 1}-${Date.now()}`,
+        postDate: tx.postDate || tx.valueDate || "",
+        valueDate: tx.valueDate || tx.postDate || "",
+        branchCode: tx.branchCode || "",
+        chequeNo: tx.chequeNo || "",
+        description: tx.description || "Bank Transaction",
+        debit: rawDeb,
+        credit: rawCred,
+        balance: rawBal,
+        balanceType: tx.balanceType || (rawBal !== null ? "CR" : ""),
+        mode: tx.mode || "OTHER",
+        category: tx.category || "General",
+        referenceNo: tx.referenceNo || ""
+      };
+    });
+    const caretHeader = "PostDate^ValueDate^BranchCode^ChequeNo^Description^Debit^Credit^Balance^Category^Mode^ReferenceNo";
+    const caretBody = processedTransactions.map(
+      (tx) => [
+        tx.postDate || "",
+        tx.valueDate || "",
+        tx.branchCode || "",
+        tx.chequeNo || "",
+        (tx.description || "").replace(/\^/g, " "),
+        tx.debit !== null && tx.debit !== void 0 ? Number(tx.debit).toFixed(2) : "",
+        tx.credit !== null && tx.credit !== void 0 ? Number(tx.credit).toFixed(2) : "",
+        tx.balance !== null && tx.balance !== void 0 ? Number(tx.balance).toFixed(2) : "",
+        tx.category || "",
+        tx.mode || "",
+        tx.referenceNo || ""
+      ].join("^")
+    ).join("\n");
+    const rawCaretText = `${caretHeader}
+${caretBody}`;
     return res.json({
       success: true,
       data: {
@@ -234,7 +278,10 @@ ${rawText}` : `Parse this bank statement file (${fileName || "document"}) and ex
           "Mode",
           "Balance"
         ],
-        transactions: processedTransactions
+        transactions: processedTransactions,
+        rawRows: validRows,
+        rawHeaders: ["postDate", "valueDate", "description", "debit", "credit", "balance", "category", "mode", "chequeNo", "branchCode"],
+        rawCaretText
       }
     });
   } catch (error) {

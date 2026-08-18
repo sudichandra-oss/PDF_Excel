@@ -7,15 +7,17 @@ import { FinancialInsights } from './components/FinancialInsights';
 import { RawTextView } from './components/RawTextView';
 import { ExportModal } from './components/ExportModal';
 import { EditTransactionModal } from './components/EditTransactionModal';
-import { BankStatementData, TransactionRow, ViewTab } from './types';
+import { ManualMappingModal } from './components/ManualMappingModal';
+import { BankStatementData, TransactionRow, AccountMetadata, ViewTab } from './types';
 import { exportStatementToExcel } from './utils/excelExporter';
-import { FileCheck, Sparkles } from 'lucide-react';
+import { FileCheck, Sparkles, SlidersHorizontal } from 'lucide-react';
 
 export default function App() {
   const [statement, setStatement] = useState<BankStatementData | null>(null);
   const [activeTab, setActiveTab] = useState<ViewTab>('spreadsheet');
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isMappingModalOpen, setIsMappingModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<TransactionRow | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -70,6 +72,20 @@ export default function App() {
     });
   };
 
+  const handleUpdateAccount = (updatedAcc: AccountMetadata) => {
+    if (!statement) return;
+    setStatement({
+      ...statement,
+      account: updatedAcc,
+    });
+    showToast('Account details updated');
+  };
+
+  const handleApplyManualMapping = (newStatement: BankStatementData) => {
+    setStatement(newStatement);
+    showToast(`Re-mapped columns for ${newStatement.transactions.length} transactions!`);
+  };
+
   const handleSaveTransaction = (tx: TransactionRow) => {
     if (!statement) return;
     const exists = statement.transactions.some(t => t.id === tx.id);
@@ -96,6 +112,14 @@ export default function App() {
     setIsEditModalOpen(true);
   };
 
+  const displayPeriod = statement ? (
+    statement.account.statementPeriod || (
+      statement.transactions.length > 0 
+        ? `${statement.transactions[0].postDate} to ${statement.transactions[statement.transactions.length - 1].postDate}`
+        : 'Active Period'
+    )
+  ) : '';
+
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex flex-col font-sans text-gray-900">
       {/* Navigation Bar */}
@@ -104,6 +128,7 @@ export default function App() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onOpenExport={() => setIsExportModalOpen(true)}
+        onOpenMapping={() => setIsMappingModalOpen(true)}
         onQuickDownloadXlsx={handleQuickDownloadXlsx}
         onQuickDownloadCsv={handleQuickDownloadCsv}
         onReset={handleReset}
@@ -125,7 +150,7 @@ export default function App() {
         ) : (
           <div>
             {/* Context Info Banner */}
-            <div className="mb-6 bg-white border border-gray-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4 text-xs shadow-sm">
+            <div className="mb-6 bg-white border border-gray-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4 text-xs shadow-xs">
               <div className="flex items-center space-x-3">
                 <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
                   <Sparkles className="w-4 h-4" />
@@ -135,21 +160,33 @@ export default function App() {
                     <span className="font-bold text-gray-900 text-sm">
                       {statement.account.bankName || 'Bank Statement'}
                     </span>
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-50 text-green-700 border border-green-200">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                       Parsed Active
                     </span>
                   </div>
                   <p className="text-gray-500 mt-0.5">
-                    Account: <span className="font-mono font-semibold text-gray-800">{statement.account.accountNumber || 'N/A'}</span> • {statement.transactions.length} Transactions Loaded
+                    Account: <span className="font-mono font-semibold text-gray-800">{statement.account.accountNumber || '—'}</span> • {statement.transactions.length} Transactions Loaded
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center space-x-2 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
-                <span className="text-gray-400">Statement Period:</span>
-                <span className="font-semibold text-gray-700">
-                  {statement.account.statementPeriod || 'N/A'}
-                </span>
+              <div className="flex items-center space-x-3">
+                <button
+                  type="button"
+                  id="btn-trigger-mapping-banner"
+                  onClick={() => setIsMappingModalOpen(true)}
+                  className="inline-flex items-center px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5 mr-1 text-indigo-600" />
+                  Map Columns
+                </button>
+
+                <div className="flex items-center space-x-2 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
+                  <span className="text-gray-400">Statement Period:</span>
+                  <span className="font-semibold text-gray-700">
+                    {displayPeriod}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -161,6 +198,7 @@ export default function App() {
                 onUpdateTransactions={handleUpdateTransactions}
                 onOpenAddModal={handleOpenAddModal}
                 onOpenEditModal={handleOpenEditModal}
+                onOpenMapping={() => setIsMappingModalOpen(true)}
               />
             )}
 
@@ -169,6 +207,7 @@ export default function App() {
                 account={statement.account}
                 transactions={statement.transactions}
                 currencySymbol={statement.account.currency?.includes('$') ? '$' : '₹'}
+                onUpdateAccount={handleUpdateAccount}
               />
             )}
 
@@ -198,6 +237,16 @@ export default function App() {
         />
       )}
 
+      {/* Manual Column Mapping Modal */}
+      {statement && (
+        <ManualMappingModal
+          statement={statement}
+          isOpen={isMappingModalOpen}
+          onClose={() => setIsMappingModalOpen(false)}
+          onApplyMapping={handleApplyManualMapping}
+        />
+      )}
+
       {/* Add / Edit Transaction Row Modal */}
       <EditTransactionModal
         isOpen={isEditModalOpen}
@@ -215,3 +264,4 @@ export default function App() {
     </div>
   );
 }
+
