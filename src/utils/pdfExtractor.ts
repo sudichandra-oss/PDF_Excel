@@ -1,13 +1,21 @@
-import * as pdfjsLib from 'pdfjs-dist';
-import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
+import { ExtractedPdfResult, ExtractProgressCallback, PositionedLine, PositionedWord } from '../types';
 
-// Configure worker for Vite using local bundled worker url
-if (typeof window !== 'undefined') {
-  try {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
-  } catch (e) {
-    console.warn('Failed to assign pdfWorker url:', e);
+// Load PDF.js only when a PDF is actually opened. This keeps its browser-only
+// globals out of the initial app bootstrap so the upload screen can render in
+// production browsers and server/static preview environments.
+let pdfjsPromise: Promise<typeof import('pdfjs-dist')> | null = null;
+
+async function getPdfjs() {
+  if (!pdfjsPromise) {
+    pdfjsPromise = Promise.all([
+      import('pdfjs-dist'),
+      import('pdfjs-dist/build/pdf.worker.mjs?url'),
+    ]).then(([pdfjsLib, worker]) => {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = worker.default;
+      return pdfjsLib;
+    });
   }
+  return pdfjsPromise;
 }
 
 /**
@@ -98,6 +106,7 @@ export async function extractDetailedTextFromPDF(
   }
 
   try {
+    const pdfjsLib = await getPdfjs();
     const loadingTask = pdfjsLib.getDocument({
       data: arrayBuffer,
       password: password || undefined,
