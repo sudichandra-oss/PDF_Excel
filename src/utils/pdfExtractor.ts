@@ -1,9 +1,13 @@
-import { ExtractedPdfResult, ExtractProgressCallback, PositionedLine, PositionedWord } from '../types';
-
 // Load PDF.js only when a PDF is actually opened. This keeps its browser-only
 // globals out of the initial app bootstrap so the upload screen can render in
 // production browsers and server/static preview environments.
 let pdfjsPromise: Promise<typeof import('pdfjs-dist')> | null = null;
+let tesseractPromise: Promise<typeof import('tesseract.js')> | null = null;
+
+async function getTesseract() {
+  if (!tesseractPromise) tesseractPromise = import('tesseract.js');
+  return tesseractPromise;
+}
 
 async function getPdfjs() {
   if (!pdfjsPromise) {
@@ -52,6 +56,59 @@ export type PdfProgressCallback = (progress: {
   percent: number;
   stage: string;
 }) => void;
+
+async function extractScannedPdfWithOcr(
+  pdf: any,
+  totalPages: number,
+  onProgress?: PdfProgressCallback,
+): Promise<{ text: string; chars: number; lines: number }> {
+  const { createWorker } = await getTesseract();
+  const worker = await createWorker('eng', 1, {
+    logger: (message) => {
+      if (message.status === 'recognizing text' && onProgress) {
+        onProgress({
+          page: 0,
+          totalPages,
+          percent: Math.min(98, Math.round(86 + (message.progress || 0) * 12)),
+          stage: `Reading scanned PDF with OCR (${Math.round((message.progress || 0) * 100)}%)...`,
+        });
+      }
+    },
+  });
+
+  const pages: string[] = [];
+  try {
+    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 2.2 });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('OCR canvas is unavailable in this browser.');
+      await page.render({ canvasContext: context, viewport }).promise;
+
+      if (onProgress) {
+        onProgress({
+          page: pageNum,
+          totalPages,
+          percent: Math.min(98, Math.round(86 + (pageNum / totalPages) * 10)),
+          stage: `Reading scanned page ${pageNum} of ${totalPages} with OCR...`,
+        });
+      }
+
+      const result = await worker.recognize(canvas);
+      pages.push(result.data.text.trim());
+      canvas.width = 1;
+      canvas.height = 1;
+    }
+  } finally {
+    await worker.terminate();
+  }
+
+  const text = pages.filter(Boolean).join('\\n--- PAGE_BREAK ---\\n');
+  return { text, chars: text.length, lines: text ? text.split(/\\r?\\n/).length : 0 };
+}
 
 export interface PdfExtractionDetails {
   text: string;
@@ -261,7 +318,28 @@ export async function extractDetailedTextFromPDF(
     const hasDigitalText = totalChars > 20 && totalLinesCount > 0;
 
     if (!hasDigitalText) {
-      // PDF was loaded without error, but 0 digital text layer was extracted
+      try {
+        const ocr = await extractScannedPdfWithOcr(pdf, totalPages, onProgress);
+        if (ocr.chars > 20) {
+          return {
+            text: ocr.text,
+            totalPages,
+            extractedChars: ocr.chars,
+            extractedLines: ocr.lines,
+            hasTextLayer: false,
+            isPasswordProtected: false,
+            isPasswordIncorrect: false,
+            isScannedOrImageOnly: true,
+            isCorrupt: false,
+            rawSample: ocr.text.substring(0, 350),
+            diagnosticReason: `The PDF was scanned, so ${ocr.chars.toLocaleString()} characters were recovered with OCR.`,
+            suggestedAction: 'Review the extracted transactions because OCR can misread blurred digits or symbols.',
+          };
+        }
+      } catch (ocrErr) {
+        console.warn('[v0] OCR fallback failed:', ocrErr);
+      }
+
       return {
         text: '',
         totalPages,
@@ -273,8 +351,8 @@ export async function extractDetailedTextFromPDF(
         isScannedOrImageOnly: true,
         isCorrupt: false,
         errorCode: 'SCANNED_IMAGE_NO_TEXT',
-        diagnosticReason: `The PDF has ${totalPages} page(s) but contains 0 digital text characters (scanned paper document / image-only).`,
-        suggestedAction: 'This PDF is a scanned photocopy or image without selectable text. Use the instant "Central Bank of India" sample or use "Paste Statement Text".',
+        diagnosticReason: `The PDF has ${totalPages} page(s) but contains no selectable text. OCR could not recover enough content.`,
+        suggestedAction: 'Try a clearer scan or use "Paste Statement Text".',
       };
     }
 
@@ -374,7 +452,7 @@ export async function extractTextFromPDF(
   password?: string
 ): Promise<string> {
   const result = await extractDetailedTextFromPDF(file, password, onProgress);
-  if (result.hasTextLayer && result.text) {
+  if (result.text && result.extractedChars > 20) {
     return result.text;
   }
   if (result.isPasswordProtected) {
