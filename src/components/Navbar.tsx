@@ -7,6 +7,7 @@ interface NavbarProps {
   activeTab: ViewTab;
   onTabChange: (tab: ViewTab) => void;
   onOpenExport: () => void;
+  onOpenMapping?: () => void;
   onQuickDownloadXlsx: () => void;
   onQuickDownloadCsv: () => void;
   onReset: () => void;
@@ -17,6 +18,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   onTabChange,
   onOpenExport,
+  onOpenMapping,
   onQuickDownloadXlsx,
   onQuickDownloadCsv,
   onReset,
@@ -28,7 +30,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center justify-between h-16">
           {/* Logo & Brand */}
           <div className="flex items-center space-x-3">
-            <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-sm">
+            <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-xs">
               X
             </div>
             <div>
@@ -50,17 +52,29 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right Status & Actions */}
           <div className="flex items-center space-x-3">
-            <div className="flex items-center space-x-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-full text-xs font-medium text-gray-600">
+            <div className="hidden sm:flex items-center space-x-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-full text-xs font-medium text-gray-600">
               <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
               <span>System Ready</span>
             </div>
 
             {statement && (
               <div className="flex items-center space-x-2">
+                {onOpenMapping && (
+                  <button
+                    onClick={onOpenMapping}
+                    id="btn-map-columns-nav"
+                    className="inline-flex items-center px-3 py-1.5 border border-indigo-200 text-xs font-semibold rounded-lg text-indigo-700 bg-indigo-50/80 hover:bg-indigo-100 transition-colors shadow-2xs cursor-pointer"
+                    title="Manually map columns"
+                  >
+                    <Table className="w-3.5 h-3.5 mr-1 text-indigo-600" />
+                    <span>Map Columns</span>
+                  </button>
+                )}
+
                 <button
                   onClick={onReset}
                   id="btn-upload-new"
-                  className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-xs font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition-colors shadow-2xs"
+                  className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-xs font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition-colors shadow-2xs cursor-pointer"
                   title="Upload another statement"
                 >
                   <UploadCloud className="w-3.5 h-3.5 sm:mr-1.5 text-gray-500" />
@@ -70,7 +84,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   onClick={onQuickDownloadCsv}
                   id="btn-quick-csv"
-                  className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-xs font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition-colors shadow-2xs"
+                  className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-xs font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition-colors shadow-2xs cursor-pointer"
                   title="Download CSV"
                 >
                   <Download className="w-3.5 h-3.5 mr-1 text-gray-400" />
@@ -80,7 +94,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   onClick={onQuickDownloadXlsx}
                   id="btn-quick-excel"
-                  className="inline-flex items-center px-3.5 py-1.5 text-xs font-semibold rounded-lg text-white bg-green-600 hover:bg-green-700 transition-colors shadow-sm"
+                  className="inline-flex items-center px-3.5 py-1.5 text-xs font-semibold rounded-lg text-white bg-green-600 hover:bg-green-700 transition-colors shadow-xs cursor-pointer"
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />
                   <span>Download Excel</span>
@@ -89,7 +103,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   onClick={onOpenExport}
                   id="btn-export-options"
-                  className="hidden md:inline-flex items-center px-2.5 py-1.5 border border-blue-200 text-xs font-medium rounded-lg text-blue-700 bg-blue-50 hover:bg-blue-100"
+                  className="hidden md:inline-flex items-center px-2.5 py-1.5 border border-blue-200 text-xs font-medium rounded-lg text-blue-700 bg-blue-50 hover:bg-blue-100 cursor-pointer"
                 >
                   Custom Export...
                 </button>

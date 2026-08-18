@@ -21,6 +21,7 @@ interface SpreadsheetGridProps {
   onUpdateTransactions: (updated: TransactionRow[]) => void;
   onOpenAddModal: () => void;
   onOpenEditModal: (tx: TransactionRow) => void;
+  onOpenMapping?: () => void;
 }
 
 export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
@@ -29,6 +30,7 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   onUpdateTransactions,
   onOpenAddModal,
   onOpenEditModal,
+  onOpenMapping,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMode, setFilterMode] = useState<string>('ALL');
@@ -114,11 +116,23 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
 
   // Calculations for current view
   const currentTotalDebits = useMemo(() => {
-    return filteredTransactions.reduce((acc, t) => acc + (Number(t.debit) || 0), 0);
+    return filteredTransactions.reduce((acc, t) => {
+      if (t.debit !== null && t.debit !== undefined && t.debit !== -1) {
+        const val = Number(t.debit);
+        return acc + (isNaN(val) ? 0 : val);
+      }
+      return acc;
+    }, 0);
   }, [filteredTransactions]);
 
   const currentTotalCredits = useMemo(() => {
-    return filteredTransactions.reduce((acc, t) => acc + (Number(t.credit) || 0), 0);
+    return filteredTransactions.reduce((acc, t) => {
+      if (t.credit !== null && t.credit !== undefined && t.credit !== -1) {
+        const val = Number(t.credit);
+        return acc + (isNaN(val) ? 0 : val);
+      }
+      return acc;
+    }, 0);
   }, [filteredTransactions]);
 
   const handleDeleteRow = (id: string) => {
@@ -196,12 +210,24 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
           </div>
         </div>
 
-        {/* Quick action: Add Transaction */}
+        {/* Quick action: Add Transaction & Map Columns */}
         <div className="flex items-center space-x-2">
+          {onOpenMapping && (
+            <button
+              onClick={onOpenMapping}
+              id="btn-map-columns-grid"
+              className="inline-flex items-center px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg font-semibold text-xs shadow-2xs transition-colors cursor-pointer"
+              title="Change or fix column mappings"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5 mr-1 text-indigo-600" />
+              <span>Map Columns</span>
+            </button>
+          )}
+
           <button
             onClick={onOpenAddModal}
             id="btn-add-transaction-row"
-            className="inline-flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-xs shadow-sm transition-colors"
+            className="inline-flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-xs shadow-xs transition-colors cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5 mr-1" />
             <span>Add Row</span>
@@ -413,12 +439,18 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                             )
                           ) : col.key === 'balance' ? (
                             <span className="font-semibold text-gray-900 font-mono">
-                              {currencySymbol}{Number(tx.balance ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              {tx.balanceType ? (
-                                <span className="ml-1 text-[10px] text-gray-400 font-normal">
-                                  {tx.balanceType}
-                                </span>
-                              ) : null}
+                              {tx.balance !== null && tx.balance !== undefined && tx.balance !== -1 ? (
+                                <>
+                                  {currencySymbol}{Number(tx.balance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  {tx.balanceType ? (
+                                    <span className="ml-1 text-[10px] text-gray-400 font-normal">
+                                      {tx.balanceType}
+                                    </span>
+                                  ) : null}
+                                </>
+                              ) : (
+                                <span className="text-gray-300">-</span>
+                              )}
                             </span>
                           ) : col.key === 'mode' ? (
                             <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${getModeBadgeClass(tx.mode)}`}>
