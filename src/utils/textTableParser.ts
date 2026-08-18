@@ -290,8 +290,20 @@ export function parseCaretDelimitedText(caretText: string, fileName: string = 'b
       (lowerLine.includes('date') && lowerLine.includes('particulars'));
 
     if (isHeaderLine) {
-      if (headerColumns.length === 0) {
-        headerColumns = parts.map(p => p.toLowerCase().replace(/[^a-z0-9]/g, ''));
+      const normalizedHeader = parts.map(p => p.toLowerCase().replace(/[^a-z0-9]/g, ''));
+      // Central Bank of India statements use this stable 8-column layout and
+      // repeat it at the top of every page. Keep the empty debit/credit cells
+      // in place instead of collapsing them and shifting balance left.
+      const isCentralBankLayout =
+        normalizedHeader.length >= 8 &&
+        normalizedHeader[0].includes('postdate') &&
+        normalizedHeader[1].includes('valuedate') &&
+        normalizedHeader.some(h => h.includes('transactiondescription')) &&
+        normalizedHeader.includes('debit') &&
+        normalizedHeader.includes('credit') &&
+        normalizedHeader.includes('balance');
+      if (headerColumns.length === 0 || isCentralBankLayout) {
+        headerColumns = normalizedHeader;
       }
       continue;
     }
